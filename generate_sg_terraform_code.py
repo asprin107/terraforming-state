@@ -43,167 +43,130 @@ f_out = ''
 
 for sg in response['SecurityGroups']:
     if sg['VpcId'] == vpc_id:
+        is_self = False
         tf_code = sg_code_block['init'] + "\"" + sg['VpcId'] + "-" + sg['GroupName'] + "\" {\n" + \
                   "\t" + sg_code_block['name'] + "\"" + sg['GroupName'] + "\"\n" + \
                   "\t" + sg_code_block['description'] + "\"" + sg['Description'] + "\"\n" + \
                   "\t" + sg_code_block['vpc_id'] + "\"" + sg['VpcId'] + "\"\n"
         # Ingress
         for ingress in sg['IpPermissions']:
+            map_description = {}
             # Source : CIDR
             if len(ingress['IpRanges']) > 0:
-                map_description = {}
-                for cidr in ingress['IpRanges']:
-                    if 'Description' in cidr:
-                        if cidr['Description'] in map_description:
-                            map_description[cidr['Description']].append(cidr['CidrIp'])
+                for ip_range in ingress['IpRanges']:
+                    if 'Description' in ip_range:
+                        if ip_range['Description'] in map_description and 'cidr' in map_description[ip_range['Description']]:
+                            map_description[ip_range['Description']]['cidr'].append(ip_range['CidrIp'])
                         else:
-                            map_description[cidr['Description']] = [cidr['CidrIp']]
+                            map_description[ip_range['Description']] = {'cidr': [ip_range['CidrIp']]}
                     else:
-                        if '' in map_description:
-                            map_description[''].append(cidr['CidrIp'])
+                        if '' in map_description and 'cidr' in map_description['']:
+                            map_description['']['cidr'].append(ip_range['CidrIp'])
                         else:
-                            map_description[''] = [cidr['CidrIp']]
-                for key in map_description:
-                    tf_code = tf_code + \
-                              "\n\t" + sg_code_block['ingress']['init'] + "\n" + \
-                              "\t\t" + sg_code_block['ingress']['protocol'] + "\"" + ingress['IpProtocol'] + "\"\n"
-                    if ingress['IpProtocol'] != '-1':
-                        tf_code = tf_code + \
-                                  "\t\t" + sg_code_block['ingress']['from'] + str(ingress['FromPort']) + "\n" + \
-                                  "\t\t" + sg_code_block['ingress']['to'] + str(ingress['ToPort']) + "\n"
-                    else:
-                        tf_code = tf_code + \
-                                  "\t\t" + sg_code_block['ingress']['from'] + " 0 \n" + \
-                                  "\t\t" + sg_code_block['ingress']['to'] + " 0 \n"
-
-                    tf_code = tf_code + \
-                              "\t\t" + sg_code_block['ingress']['cidr_blocks'] + json.dumps(map_description[key]) + "\n" + \
-                              "\t\t" + sg_code_block['description'] + "\"" + key + "\"\n" + \
-                              "\t" + sg_code_block['end'] + "\n"
+                            map_description[''] = {'cidr': [ip_range['CidrIp']]}
 
             # Source : Security Group
             if len(ingress['UserIdGroupPairs']) > 0:
-                map_description_sg = {}
                 for sg_id in ingress['UserIdGroupPairs']:
                     if 'Description' in sg_id:
-                        if sg_id['Description'] in map_description_sg:
-                            map_description_sg[sg_id['Description']].append(sg_id['GroupId'])
+                        if sg_id['Description'] in map_description and 'sg' in map_description[sg_id['Description']]:
+                            map_description[sg_id['Description']]['sg'].append(sg_id['GroupId'])
                         else:
-                            map_description_sg[sg_id['Description']] = [sg_id['GroupId']]
+                            map_description[sg_id['Description']] = {'sg': [sg_id['GroupId']]}
                     else:
-                        if '' in map_description_sg:
-                            map_description_sg[''].append(sg_id['GroupId'])
+                        if '' in map_description and 'sg' in map_description['']:
+                            map_description['']['sg'].append(sg_id['GroupId'])
                         else:
-                            map_description_sg[''] = [sg_id['GroupId']]
-                for key in map_description_sg:
+                            map_description[''] = {'sg': [sg_id['GroupId']]}
+
+            for key in map_description:
+                tf_code = tf_code + \
+                          "\n\t" + sg_code_block['ingress']['init'] + "\n" + \
+                          "\t\t" + sg_code_block['ingress']['protocol'] + "\"" + ingress['IpProtocol'] + "\"\n"
+                if ingress['IpProtocol'] != '-1':
                     tf_code = tf_code + \
-                              "\n\t" + sg_code_block['ingress']['init'] + "\n" + \
-                              "\t\t" + sg_code_block['ingress']['protocol'] + "\"" + ingress['IpProtocol'] + "\"\n"
-                    if ingress['IpProtocol'] != '-1':
-                        tf_code = tf_code + \
-                                  "\t\t" + sg_code_block['ingress']['from'] + str(ingress['FromPort']) + "\n" + \
-                                  "\t\t" + sg_code_block['ingress']['to'] + str(ingress['ToPort']) + "\n"
-                    else:
-                        tf_code = tf_code + \
-                                  "\t\t" + sg_code_block['ingress']['from'] + " 0 \n" + \
-                                  "\t\t" + sg_code_block['ingress']['to'] + " 0 \n"
+                              "\t\t" + sg_code_block['ingress']['from'] + str(ingress['FromPort']) + "\n" + \
+                              "\t\t" + sg_code_block['ingress']['to'] + str(ingress['ToPort']) + "\n"
+                else:
+                    tf_code = tf_code + \
+                              "\t\t" + sg_code_block['ingress']['from'] + " 0 \n" + \
+                              "\t\t" + sg_code_block['ingress']['to'] + " 0 \n"
 
-                    if sg['GroupId'] in map_description_sg[key]:
-                        map_description_sg[key].remove(sg['GroupId'])
-                        if len(map_description_sg[key]) > 0:
-                            tf_code = tf_code + \
-                                      "\t\t" + sg_code_block['ingress']['security_groups'] + json.dumps(map_description_sg[key]) + "\n" + \
-                                      "\t\t" + sg_code_block['description'] + "\"" + key + "\"\n" + \
-                                      "\t\t" + 'self = true\n'
-                        else:
-                            tf_code = tf_code + \
-                                      "\t\t" + sg_code_block['description'] + "\"" + key + "\"\n" + \
-                                      "\t\t" + 'self = true\n'
-                    else:
-                        tf_code = tf_code + \
-                                  "\t\t" + sg_code_block['ingress']['security_groups'] + json.dumps(map_description_sg[key]) + "\n" + \
-                                  "\t\t" + sg_code_block['description'] + "\"" + key + "\"\n"
+                tf_code = tf_code + "\t\t" + sg_code_block['description'] + "\"" + key + "\"\n"
 
-                    tf_code = tf_code + "\t" + sg_code_block['end'] + "\n"
+                if 'sg' in map_description[key] and sg['GroupId'] in map_description[key]['sg']:
+                    map_description[key]['sg'].remove(sg['GroupId'])
+                    is_self = True
+
+                if 'cidr' in map_description[key] and len(map_description[key]['cidr']) > 0:
+                    tf_code = tf_code + "\t\t" + sg_code_block['ingress']['cidr_blocks'] + json.dumps(map_description[key]['cidr']) + "\n"
+
+                if 'sg' in map_description[key] and len(map_description[key]['sg']) > 0:
+                    tf_code = tf_code + "\t\t" + sg_code_block['ingress']['security_groups'] + json.dumps(map_description[key]['sg']) + "\n"
+
+                if is_self:
+                    tf_code = tf_code + "\t\tself = true\n"
+                tf_code = tf_code + "\t" + sg_code_block['end'] + "\n"
 
         # Egress
         for egress in sg['IpPermissionsEgress']:
+            map_description_e = {}
             # Source : CIDR
             if len(egress['IpRanges']) > 0:
-                map_description_e = {}
-                for cidr in egress['IpRanges']:
-                    if 'Description' in cidr:
-                        if cidr['Description'] in map_description_e:
-                            map_description_e[cidr['Description']].append(cidr['CidrIp'])
+                for ip_range in egress['IpRanges']:
+                    if 'Description' in ip_range:
+                        if ip_range['Description'] in map_description_e and 'cidr' in map_description_e[ip_range['Description']]:
+                            map_description_e[ip_range['Description']]['cidr'].append(ip_range['CidrIp'])
                         else:
-                            map_description_e[cidr['Description']] = [cidr['CidrIp']]
+                            map_description_e[ip_range['Description']] = {'cidr': [ip_range['CidrIp']]}
                     else:
-                        if '' in map_description_e:
-                            map_description_e[''].append(cidr['CidrIp'])
+                        if '' in map_description_e and 'cidr' in map_description_e['']:
+                            map_description_e['']['cidr'].append(ip_range['CidrIp'])
                         else:
-                            map_description_e[''] = [cidr['CidrIp']]
-                for key in map_description_e:
-                    tf_code = tf_code + \
-                              "\n\t" + sg_code_block['egress']['init'] + "\n" + \
-                              "\t\t" + sg_code_block['egress']['protocol'] + "\"" + egress['IpProtocol'] + "\"\n"
-                    if egress['IpProtocol'] != '-1':
-                        tf_code = tf_code + \
-                                  "\t\t" + sg_code_block['egress']['from'] + str(egress['FromPort']) + "\n" + \
-                                  "\t\t" + sg_code_block['egress']['to'] + str(egress['ToPort']) + "\n"
-                    else:
-                        tf_code = tf_code + \
-                                  "\t\t" + sg_code_block['egress']['from'] + " 0 \n" + \
-                                  "\t\t" + sg_code_block['egress']['to'] + " 0 \n"
-
-                    tf_code = tf_code + \
-                              "\t\t" + sg_code_block['egress']['cidr_blocks'] + json.dumps(map_description_e[key]) + "\n" + \
-                              "\t\t" + sg_code_block['description'] + "\"" + key + "\"\n" + \
-                              "\t" + sg_code_block['end'] + "\n"
+                            map_description_e[''] = {'cidr': [ip_range['CidrIp']]}
 
             # Source : Security Group
             if len(egress['UserIdGroupPairs']) > 0:
-                map_description_e_sg = {}
                 for sg_id in egress['UserIdGroupPairs']:
                     if 'Description' in sg_id:
-                        if sg_id['Description'] in map_description_e_sg:
-                            map_description_e_sg[sg_id['Description']].append(sg_id['GroupId'])
+                        if sg_id['Description'] in map_description_e and 'sg' in map_description_e[sg_id['Description']]:
+                            map_description_e[sg_id['Description']]['sg'].append(sg_id['GroupId'])
                         else:
-                            map_description_e_sg[sg_id['Description']] = [sg_id['GroupId']]
+                            map_description_e[sg_id['Description']] = {'sg': [sg_id['GroupId']]}
                     else:
-                        if '' in map_description_e_sg:
-                            map_description_e_sg[''].append(sg_id['GroupId'])
+                        if '' in map_description_e and 'sg' in map_description_e['']:
+                            map_description_e['']['sg'].append(sg_id['GroupId'])
                         else:
-                            map_description_e_sg[''] = [sg_id['GroupId']]
-                for key in map_description_e_sg:
+                            map_description_e[''] = {'sg': [sg_id['GroupId']]}
+
+            for key in map_description_e:
+                tf_code = tf_code + \
+                          "\n\t" + sg_code_block['egress']['init'] + "\n" + \
+                          "\t\t" + sg_code_block['egress']['protocol'] + "\"" + egress['IpProtocol'] + "\"\n"
+                if egress['IpProtocol'] != '-1':
                     tf_code = tf_code + \
-                              "\n\t" + sg_code_block['egress']['init'] + "\n" + \
-                              "\t\t" + sg_code_block['egress']['protocol'] + "\"" + egress['IpProtocol'] + "\"\n"
-                    if egress['IpProtocol'] != '-1':
-                        tf_code = tf_code + \
-                                  "\t\t" + sg_code_block['egress']['from'] + str(egress['FromPort']) + "\n" + \
-                                  "\t\t" + sg_code_block['egress']['to'] + str(egress['ToPort']) + "\n"
-                    else:
-                        tf_code = tf_code + \
-                                  "\t\t" + sg_code_block['egress']['from'] + " 0 \n" + \
-                                  "\t\t" + sg_code_block['egress']['to'] + " 0 \n"
+                              "\t\t" + sg_code_block['egress']['from'] + str(egress['FromPort']) + "\n" + \
+                              "\t\t" + sg_code_block['egress']['to'] + str(egress['ToPort']) + "\n"
+                else:
+                    tf_code = tf_code + \
+                              "\t\t" + sg_code_block['egress']['from'] + " 0 \n" + \
+                              "\t\t" + sg_code_block['egress']['to'] + " 0 \n"
 
-                    if sg['GroupId'] in map_description_e_sg[key]:
-                        map_description_e_sg[key].remove(sg['GroupId'])
-                        if len(map_description_e_sg[key]) > 0:
-                            tf_code = tf_code + \
-                                      "\t\t" + sg_code_block['egress']['security_groups'] + json.dumps(map_description_e_sg[key]) + "\n" + \
-                                      "\t\t" + sg_code_block['description'] + "\"" + key + "\"\n" + \
-                                      "\t\t" + 'self = true\n'
-                        else:
-                            tf_code = tf_code + \
-                                      "\t\t" + sg_code_block['description'] + "\"" + key + "\"\n" + \
-                                      "\t\t" + 'self = true\n'
-                    else:
-                        tf_code = tf_code + \
-                                  "\t\t" + sg_code_block['egress']['security_groups'] + json.dumps(map_description_e_sg[key]) + "\n" + \
-                                  "\t\t" + sg_code_block['description'] + "\"" + key + "\"\n"
+                tf_code = tf_code + "\t\t" + sg_code_block['description'] + "\"" + key + "\"\n"
 
-                    tf_code = tf_code + "\t" + sg_code_block['end'] + "\n"
+                if 'sg' in map_description_e[key] and sg['GroupId'] in map_description_e[key]['sg']:
+                    map_description_e[key]['sg'].remove(sg['GroupId'])
+                    is_self = True
+
+                if 'cidr' in map_description_e[key] and len(map_description_e[key]['cidr']) > 0:
+                    tf_code = tf_code + "\t\t" + sg_code_block['egress']['cidr_blocks'] + json.dumps(map_description_e[key]['cidr']) + "\n"
+
+                if 'sg' in map_description_e[key] and len(map_description_e[key]['sg']) > 0:
+                    tf_code = tf_code + "\t\t" + sg_code_block['egress']['security_groups'] + json.dumps(map_description_e[key]['sg']) + "\n"
+
+                if is_self:
+                    tf_code = tf_code + "\t\tself = true\n"
+                tf_code = tf_code + "\t" + sg_code_block['end'] + "\n"
 
         # Tags
         if 'Tags' in sg and len(sg['Tags']) > 0:
